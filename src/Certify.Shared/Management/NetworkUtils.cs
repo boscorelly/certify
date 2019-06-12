@@ -1,15 +1,17 @@
-﻿using ARSoft.Tools.Net;
-using ARSoft.Tools.Net.Dns;
-using Certify.Locales;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using ARSoft.Tools.Net;
+using ARSoft.Tools.Net.Dns;
+using Certify.Models.Config;
+using Certify.Models.Providers;
 
 namespace Certify.Management
 {
@@ -24,20 +26,23 @@ namespace Certify.Management
 
         public Action<string> Log = (message) => { };
 
-        public bool CheckSNI(string host, string sni, bool? useProxyAPI = null)
+        public async Task<bool> CheckSNI(string host, string sni, bool? useProxyAPI = null)
         {
             // if validation proxy enabled, access to the domain being validated is checked via our
             // remote API rather than directly on the servers
-            bool useProxy = useProxyAPI ?? _enableValidationProxyAPI;
+            var useProxy = useProxyAPI ?? _enableValidationProxyAPI;
+
             if (useProxy)
             {
                 // TODO: check proxy here, needs server support. if successful "return true"; and "LogAction(...)"
                 System.Diagnostics.Debug.WriteLine("ProxyAPI is not implemented for Checking SNI config, trying local");
                 Log($"Proxy TLS SNI binding check error: {host}, {sni}");
 
-                return CheckSNI(host, sni, false); // proxy failed, try local
+                return await CheckSNI(host, sni, false); // proxy failed, try local
             }
+
             var hosts = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"drivers\etc\hosts");
+
             try
             {
                 var req = new HttpRequestMessage(HttpMethod.Get, $"https://{sni}");
@@ -51,32 +56,37 @@ namespace Certify.Management
                 // the primary IP address and also for 127.0.0.1 (where primary IP will not resolve
                 // internally i.e. the default resolution is an external IP)
 
-                List<string> testHostEntries = new List<string> {
+                var testHostEntries = new List<string> {
                     $"\n127.0.0.1\t{sni}",
                 };
 
                 var ip = Dns.GetHostEntry(host)?.AddressList?.FirstOrDefault();
+
                 if (ip != null)
                 {
                     testHostEntries.Add($"\n{ip}\t{sni}");
                 }
 
-                using (StreamWriter writer = File.AppendText(hosts))
+                using (var writer = File.AppendText(hosts))
                 {
                     foreach (var hostEntry in testHostEntries)
                     {
                         writer.Write(hostEntry);
                     }
                 }
+
                 Thread.Sleep(250); // wait a bit for hosts file to take effect
 
                 try
                 {
                     using (var client = new HttpClient())
                     {
-                        var resp = client.SendAsync(req).Result;
+                        client.DefaultRequestHeaders.Add("User-Agent", Management.Util.GetUserAgent());
+
+                        var resp = await client.SendAsync(req);
                         // if the GET request succeeded, the Cert validation succeeded
-                        Log($"Local TLS SNI binding check OK: {host}, {sni}"); ;
+                        Log($"Local TLS SNI binding check OK: {host}, {sni}");
+                        ;
                     }
                 }
                 finally
@@ -116,17 +126,19 @@ namespace Certify.Management
             }
         }
 
-        public bool CheckURL(string url, bool? useProxyAPI = null)
+        public async Task<bool> CheckURL(ILog log, string url, bool? useProxyAPI = null)
         {
             // if validation proxy enabled, access to the domain being validated is checked via our
             // remote API rather than directly on the servers
-            bool useProxy = useProxyAPI ?? _enableValidationProxyAPI;
+            var useProxy = useProxyAPI ?? _enableValidationProxyAPI;
 
             //check http request to test path works
             try
             {
                 var request = WebRequest.Create(!useProxy ? url :
-                    ConfigResources.APIBaseURI + "configcheck/testurl?url=" + url);
+                    Models.API.Config.APIBaseURI + "configcheck/testurl?url=" + url);
+
+                request.Timeout = 5000;
 
                 ServicePointManager.ServerCertificateValidationCallback = (obj, cert, chain, errors) =>
                 {
@@ -134,46 +146,68 @@ namespace Certify.Management
                     return true;
                 };
 
-                var response = (HttpWebResponse)request.GetResponse();
+                log.Information($"Checking URL is accessible: {url} [proxyAPI: {useProxy}, timeout: {request.Timeout}ms]");
+
+                var response = (HttpWebResponse)await request.GetResponseAsync();
 
                 //if checking via proxy, examine result
                 if (useProxy)
                 {
-                    if ((int)response.StatusCode >= 200)
+                    if ((int)response.StatusCode >= 200 && (int)response.StatusCode < 300)
                     {
                         var encoding = ASCIIEncoding.UTF8;
                         using (var reader = new System.IO.StreamReader(response.GetResponseStream(), encoding))
                         {
-                            string jsonText = reader.ReadToEnd();
-                            Log("Proxy URL Check Result: " + jsonText);
+                            var jsonText = reader.ReadToEnd();
+
                             var result = Newtonsoft.Json.JsonConvert.DeserializeObject<Models.API.URLCheckResult>(jsonText);
+
                             if (result.IsAccessible == true)
                             {
+                                log.Information("URL is accessible. Check passed.");
+
                                 return true;
+                            }
+                            else
+                            {
+                                log.Information($"(proxy api) URL is not accessible. Result: [{result.StatusCode}] {result.Message}");
                             }
                         }
                     }
+
                     //request failed using proxy api, request again using local http
-                    return CheckURL(url, false);
+                    return await CheckURL(log, url, false);
                 }
                 else
                 {
-                    Log($"Local URL Check Result: HTTP {response.StatusCode}");
-                    //not checking via proxy, base result on status code
-                    return (int)response.StatusCode >= 200 && (int)response.StatusCode < 300;
+                    if ((int)response.StatusCode >= 200 && (int)response.StatusCode < 300)
+                    {
+                        log.Information($"(local check) URL is accessible. Check passed. HTTP {response.StatusCode}");
+
+                        return true;
+                    }
+                    else
+                    {
+                        log.Warning($"(local check) URL is not accessible. Check failed. HTTP {response.StatusCode}");
+
+                        return false;
+                    }
                 }
             }
             catch (Exception exp)
             {
                 if (useProxy)
                 {
+                    log.Warning($"Problem checking URL is accessible : {url} {exp.Message}");
+
                     // failed to call proxy API (maybe offline?), let's try a local check
-                    return CheckURL(url, false);
+                    return await CheckURL(log, url, false);
                 }
                 else
                 {
                     // failed to check URL locally
-                    System.Diagnostics.Debug.WriteLine("Failed to check url for access (" + url + "): " + exp.ToString());
+                    log.Error(exp, $"Failed to confirm URL is accessible : {url} ");
+
                     return false;
                 }
             }
@@ -184,82 +218,105 @@ namespace Certify.Management
             }
         }
 
-        public bool CheckDNSRecordTXT(string domain, string record, string record_value)
+        public async Task<string> GetDNSRecordTXT(ILog log, string fullyQualifiedRecordName)
         {
-            bool recordExists = false;
-            bool recordValueMatches = false;
-
             try
             {
                 // check TXT
-                var dn = DomainName.Parse(domain);
+                var dn = DomainName.Parse(fullyQualifiedRecordName);
 
-                var parentDomain = dn.GetParentName();
-                var query = DnsClient.Default.Resolve(parentDomain, RecordType.Txt);
-
-                if (query.AuthorityRecords[0].Name.ToString() != domain)
-                {
-                    //TODO: need to recursivley find authority zone name
-                }
+                var query = await DnsClient.Default.ResolveAsync(dn, RecordType.Txt);
 
                 foreach (var txtRecord in query.AnswerRecords.Where(r => r.RecordType == RecordType.Txt))
                 {
                     var r = ((TxtRecord)txtRecord);
-                    if (r.Name.ToString() == record)
+                    if (r.Name.ToString() == fullyQualifiedRecordName)
                     {
-                        recordExists = true;
+                        return r.TextData;
                     }
-                    if (String.IsNullOrEmpty(record_value))
-                    {
-                        recordValueMatches = true;
-                    }
-                    else
-                    {
-                        if (r.TextData == (string)record_value) recordValueMatches = true;
-                    }
-
-                    if (recordExists && recordValueMatches) return true;
                 }
             }
             catch (Exception exp)
             {
-                Log($"'{domain}' DNS error resolving TXT: " + exp.ToString());
+                log.Error(exp, $"'{fullyQualifiedRecordName}' DNS error resolving TXT record ");
             }
-            return false;
+
+            return null;
         }
 
-        public (bool Ok, string Message) CheckDNS(string domain, bool? useProxyAPI = null)
+        public async Task<ActionResult> CheckServiceConnection(string hostname, int port)
         {
-            // helper function to log the error then return the ValueTuple
-            Func<string, (bool, string)> errorResponse = (msg) =>
+            using (var tcpClient = new TcpClient())
             {
-                msg = $"CheckDNS: {msg}\nDNS checks can be disabled in Settings if required.";
-                Log(msg);
-                return (false, msg);
-            };
+                try
+                {
+                    await tcpClient.ConnectAsync(hostname, port);
 
-            if (String.IsNullOrEmpty(domain))
+                    return new ActionResult
+                    {
+                        IsSuccess = true,
+                        Message = $"CheckServiceConnection: '{hostname}' responded OK on port {port} "
+                    };
+                }
+                catch (Exception exp)
+                {
+                    return new ActionResult
+                    {
+                        IsSuccess = true,
+                        Message = $"CheckServiceConnection: Failed to connect to '{hostname}' on port {port} :{exp.Message} "
+                    };
+                }
+            }
+        }
+
+        public async Task<List<ActionResult>> CheckDNS(ILog log, string domain, bool? useProxyAPI = null, bool includeIPCheck = true)
+        {
+            var results = new List<ActionResult>();
+
+            log.Information("CheckDNS: performing DNS checks. This option can be disabled in Settings if required.");
+
+            if (string.IsNullOrEmpty(domain))
             {
-                return errorResponse("Cannot check null or empty DNS name.");
+                results.Add(new ActionResult { IsSuccess = false, Message = "CheckDNS: Cannot check null or empty DNS name." });
+                log.Error(results.Last().Message);
+                return results;
             }
 
             // if validation proxy enabled, DNS for the domain being validated is checked via our
             // remote API rather than directly on the servers
-            bool useProxy = useProxyAPI ?? _enableValidationProxyAPI;
+            var useProxy = useProxyAPI ?? _enableValidationProxyAPI;
 
             if (useProxy)
             {
                 // TODO: update proxy and implement proxy check here return (ok, message);
             }
 
-            // check dns
-            try
+            // check dns resolves to IP
+            if (includeIPCheck)
             {
-                Dns.GetHostEntry(domain); // this throws SocketException for bad DNS
-            }
-            catch
-            {
-                return errorResponse($"'{domain}' failed to resolve to an IP Address.");
+                try
+                {
+                    log.Information($"Checking DNS name resolves to IP: {domain}");
+
+                    var result = await Dns.GetHostEntryAsync(domain); // this throws SocketException for bad DNS
+
+                    results.Add(new ActionResult
+                    {
+                        IsSuccess = true,
+                        Message = $"CheckDNS: '{domain}' resolved to an IP Address {result.AddressList[0].ToString()}. "
+                    });
+                }
+                catch
+                {
+                    results.Add(new ActionResult
+                    {
+                        IsSuccess = false,
+                        Message = $"CheckDNS: '{domain}' failed to resolve to an IP Address. "
+                    });
+
+                    log.Error(results.Last().Message);
+                    return results;
+                }
             }
 
             DnsMessage caa_query = null;
@@ -273,13 +330,21 @@ namespace Certify.Management
             }
             catch (Exception exp)
             {
-                Log($"'{domain}' DNS error resolving CAA: " + exp.ToString());
+                log.Error(exp, $"'{domain}' DNS error resolving CAA : {exp.Message}");
             }
 
             if (caa_query == null || caa_query.ReturnCode != ReturnCode.NoError)
             {
                 // dns lookup failed
-                return errorResponse($"'{domain}' failed to parse or resolve CAA.");
+
+                results.Add(new ActionResult
+                {
+                    IsSuccess = false,
+                    Message = $"CheckDNS: '{domain}' failed to parse or resolve CAA. "
+                });
+
+                log.Error(results.Last().Message);
+                return results;
             }
 
             if (caa_query.AnswerRecords.Where(r => r is CAARecord).Count() > 0)
@@ -292,38 +357,68 @@ namespace Certify.Management
                     // there were no CAA records of "[flag] [tag] [value]" where [tag] = issue |
                     // issuewild and [value] = letsencrypt.org
                     // see: https://letsencrypt.org/docs/caa/
-                    return errorResponse($"'{domain}' DNS CAA verification failed.");
+
+                    results.Add(new ActionResult
+                    {
+                        IsSuccess = false,
+                        Message = $"CheckDNS: '{domain}' DNS CAA verification failed - existing CAA record prevent issuance for letsencrypt.org CA."
+                    });
+
+                    log.Warning(results.Last().Message);
+                    return results;
                 }
             }
+
             // now either there were no CAA records returned (i.e. CAA is not configured) or the CAA
             // records are correctly configured
 
-            // note: this seems to need to run in a Task or it hangs forever when called from the WPF UI
-            if (!Task.Run(async () =>
+            // check DNSSEC
+            var dnssec = new DnsSecRecursiveDnsResolver();
+            try
             {
-                // check DNSSEC
-                var dnssec = new DnsSecRecursiveDnsResolver();
-                try
+                log.Information("Checking DNSSEC resolution");
+
+                var res = await dnssec.ResolveSecureAsync<ARecord>(dn);
+                var isOk = res.ValidationResult != DnsSecValidationResult.Bogus;
+
+                if (isOk)
                 {
-                    var res = await dnssec.ResolveSecureAsync<ARecord>(dn);
-                    return res.ValidationResult != DnsSecValidationResult.Bogus;
+                    results.Add(new ActionResult
+                    {
+                        IsSuccess = true,
+                        Message = $"CheckDNS: '{domain}' DNSSEC Check OK - Validation Result: {res.ValidationResult.ToString()}"
+                    });
                 }
-                catch (DnsSecValidationException)
+                else
                 {
-                    // invalid dnssec
-                    return false;
+                    results.Add(new ActionResult
+                    {
+                        IsSuccess = isOk,
+                        Message = $"CheckDNS: '{domain}'DNSSEC Check Failed - Validation Result: {res.ValidationResult.ToString()}"
+                    });
                 }
-                catch (Exception exp)
-                {
-                    // domain failed to resolve from this machine
-                    Log($"'{domain}' DNS error resolving DnsSecRecursiveDnsResolver: " + exp.ToString());
-                    return false;
-                }
-            }).Result)
-            {
-                return errorResponse($"'{domain}' DNSSEC verification failed.");
             }
-            return (true, "");
+            catch (DnsSecValidationException exp)
+            {
+                // invalid dnssec
+                results.Add(new ActionResult
+                {
+                    IsSuccess = false,
+                    Message = $"CheckDNS: '{domain}'DNSSEC Check Failed - {exp.Message}"
+                });
+                log.Warning(results.Last().Message);
+            }
+            catch (Exception exp)
+            {
+                // domain failed to resolve from this machine
+                results.Add(new ActionResult
+                {
+                    IsSuccess = false,
+                    Message = $"CheckDNS: '{domain}' DNS error resolving DnsSecRecursiveDnsResolver - {exp.Message}"
+                });
+            }
+
+            return results;
         }
     }
 }

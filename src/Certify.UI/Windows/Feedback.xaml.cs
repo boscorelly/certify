@@ -1,7 +1,7 @@
-using Certify.Locales;
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Input;
+using Certify.Locales;
 
 namespace Certify.UI.Windows
 {
@@ -13,7 +13,7 @@ namespace Certify.UI.Windows
         public string FeedbackMessage { get; set; }
         public bool IsException { get; set; }
 
-        protected Certify.UI.ViewModel.AppModel MainViewModel => ViewModel.AppModel.Current;
+        protected Certify.UI.ViewModel.AppViewModel MainViewModel => ViewModel.AppViewModel.Current;
 
         public Feedback(string feedbackMsg, bool isException)
         {
@@ -21,25 +21,22 @@ namespace Certify.UI.Windows
 
             if (feedbackMsg != null)
             {
-                this.FeedbackMessage = feedbackMsg;
-                this.Comment.Text = this.FeedbackMessage;
+                FeedbackMessage = feedbackMsg;
+                Comment.Text = FeedbackMessage;
             }
-            this.IsException = isException;
+            IsException = isException;
 
-            if (this.IsException)
+            if (IsException)
             {
-                this.Prompt.Text = SR.Send_Feedback_Exception;
+                Prompt.Text = SR.Send_Feedback_Exception;
             }
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            this.Close();
-        }
+        private void Cancel_Click(object sender, RoutedEventArgs e) => Close();
 
         private async void Submit_Click(object sender, RoutedEventArgs e)
         {
-            if (String.IsNullOrEmpty(Comment.Text))
+            if (string.IsNullOrEmpty(Comment.Text))
             {
                 return;
             }
@@ -48,6 +45,8 @@ namespace Certify.UI.Windows
 
             //submit feedback if connection available
 
+            var appVersion = Management.Util.GetAppVersion();
+
             var feedbackReport = new Models.Shared.FeedbackReport
             {
                 EmailAddress = EmailAddress.Text,
@@ -55,10 +54,10 @@ namespace Certify.UI.Windows
                 SupportingData = new
                 {
                     OS = Environment.OSVersion.ToString(),
-                    AppVersion = ConfigResources.AppName + " " + new Certify.Management.Util().GetAppVersion(),
-                    IsException = this.IsException
+                    AppVersion = ConfigResources.AppName + " " + appVersion,
+                    IsException = IsException
                 },
-                AppVersion = ConfigResources.AppName + " " + new Certify.Management.Util().GetAppVersion(),
+                AppVersion = ConfigResources.AppName + " " + appVersion,
                 IsException = IsException
             };
 
@@ -72,7 +71,7 @@ namespace Certify.UI.Windows
                 if (submittedOK)
                 {
                     MessageBox.Show(SR.Send_Feedback_Success);
-                    this.Close();
+                    Close();
                     return;
                 }
                 else

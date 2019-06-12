@@ -154,10 +154,10 @@
   <data name="CertifyManager_DomainValidationSkipVerifed" xml:space="preserve">
     <value>El dominio ya está autorizado, omitiendo la verificación: {0}</value>
   </data>
-  <data name="ManagedItemType_Manual" xml:space="preserve">
+  <data name="ManagedCertificateType_Manual" xml:space="preserve">
     <value>Certificado SSL Manual vía Let's Encrypt</value>
   </data>
-  <data name="ManagedItemType_LocalIIS" xml:space="preserve">
+  <data name="ManagedCertificateType_LocalIIS" xml:space="preserve">
     <value>Certificado SSL IIS Local vía Let's Encrypt</value>
   </data>
   <data name="CertifyManager_AutomateConfigurationCheckFailed_SNI" xml:space="preserve">
@@ -173,9 +173,6 @@ Compruebe que tiene enlaces https de SNI para su sitio
   </data>
   <data name="CertifyManager_LetsEncryptServiceTimeout" xml:space="preserve">
     <value>El servicio Let's Encrypt no emitió un certificado válido en el tiempo permitido. {0}</value>
-  </data>
-  <data name="CertifyManager_PerformingChallengeResponseViaIISX0" xml:space="preserve">
-    <value>Ejecutando Respuesta al Desafío vía IIS: {0}</value>
   </data>
   <data name="CertifyManager_PerformingConfigTests" xml:space="preserve">
     <value>Ejecutando Pruebas de Configuración</value>

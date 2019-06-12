@@ -1,7 +1,7 @@
-using Certify.Locales;
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Data;
+using Certify.Locales;
 
 namespace Certify.UI.Utils
 {
@@ -9,8 +9,6 @@ namespace Certify.UI.Utils
     {
         public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
-            if (value == null) return DependencyProperty.UnsetValue;
-
             return GetDescription((DateTime?)value);
         }
 
@@ -24,7 +22,7 @@ namespace Certify.UI.Utils
             if (expiry == null) return SR.ExpiryDateConverter_NoCurrentCertificate;
 
             var days = (int)Math.Abs((DateTime.Now - expiry).Value.TotalDays);
-            return String.Format(SR.ExpiryDateConverter_CertificateExpiresIn, days);
+            return string.Format(SR.ExpiryDateConverter_CertificateExpiresIn, days);
         }
     }
 

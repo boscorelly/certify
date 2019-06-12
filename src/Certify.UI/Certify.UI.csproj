@@ -31,9 +31,10 @@
     <BootstrapperEnabled>true</BootstrapperEnabled>
     <TargetFrameworkProfile />
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x64</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -51,6 +52,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject>Certify.UI.App</StartupObject>
@@ -60,6 +62,27 @@
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\x64\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <Optimize>false</Optimize>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x64</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>..\CodeAnalysis.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>true</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>full</DebugType>
+    <PlatformTarget>x64</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -83,54 +106,84 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Content Include="Assets\CSS\markdown.css">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Compile Include="Controls\GettingStarted.xaml.cs">
       <DependentUpon>GettingStarted.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\MiscOptions.xaml.cs">
+    <Compile Include="Controls\ManagedCertificate\ChallengeConfigItem.xaml.cs">
+      <DependentUpon>ChallengeConfigItem.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\ManagedCertificate\DeploymentTask.xaml.cs">
+      <DependentUpon>DeploymentTask.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\ManagedCertificate\TestProgress.xaml.cs">
+      <DependentUpon>TestProgress.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\ManagedCertificate\StatusInfo.xaml.cs">
+      <DependentUpon>StatusInfo.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\ManagedCertificate\MiscOptions.xaml.cs">
       <DependentUpon>MiscOptions.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\Deployment.xaml.cs">
+    <Compile Include="Controls\ManagedCertificate\Deployment.xaml.cs">
       <DependentUpon>Deployment.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\Preview.xaml.cs">
+    <Compile Include="Controls\ManagedCertificate\Preview.xaml.cs">
       <DependentUpon>Preview.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\ScriptHooks.xaml.cs">
+    <Compile Include="Controls\ManagedCertificate\ScriptHooks.xaml.cs">
       <DependentUpon>ScriptHooks.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\DomainAuthorization.xaml.cs">
+    <Compile Include="Controls\ManagedCertificate\DomainAuthorization.xaml.cs">
       <DependentUpon>DomainAuthorization.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\CertificateDomains.xaml.cs">
+    <Compile Include="Controls\ManagedCertificate\CertificateDomains.xaml.cs">
       <DependentUpon>CertificateDomains.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Controls\ManagedCertificate\TabHeader.xaml.cs">
+      <DependentUpon>TabHeader.xaml</DependentUpon>
     </Compile>
     <Compile Include="Controls\QuickStart.xaml.cs">
       <DependentUpon>QuickStart.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Settings\UISettings.cs" />
     <Compile Include="Utils\CSRAlgCheckedConverter.cs" />
+    <Compile Include="Utils\NullableDateFormatter.cs" />
     <Compile Include="Utils\ExpiryDateConverter.cs" />
-    <Compile Include="Utils\ManagedItemHealthVisibilityConverter.cs" />
-    <Compile Include="Utils\ManagedItemHealthColourConverter.cs" />
+    <Compile Include="Utils\ManagedCertificateHealthVisibilityConverter.cs" />
+    <Compile Include="Utils\ManagedCertificateHealthColourConverter.cs" />
     <Compile Include="Utils\UpdateCheckUtils.cs" />
-    <Compile Include="ViewModel\DesignViewModel.cs" />
+    <Compile Include="ViewModel\DeploymentTaskConfigViewModel.cs" />
+    <Compile Include="ViewModel\Design\ManagedCertificateDesignViewModel.cs" />
+    <Compile Include="ViewModel\ChallengeConfigItemViewModel.cs" />
+    <Compile Include="ViewModel\ManagedCertificateViewModel.cs" />
+    <Compile Include="ViewModel\Design\AppDesignViewModel.cs" />
+    <Compile Include="Windows\ControlTemplateSelector.cs" />
     <Compile Include="Windows\EditCredential.xaml.cs">
       <DependentUpon>EditCredential.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Windows\EditDeploymentTask.xaml.cs">
+      <DependentUpon>EditDeploymentTask.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Windows\GettingStartedGuide.xaml.cs">
+      <DependentUpon>GettingStartedGuide.xaml</DependentUpon>
     </Compile>
     <Compile Include="Windows\Feedback.xaml.cs">
       <DependentUpon>Feedback.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Windows\ImportManagedSites.xaml.cs">
-      <DependentUpon>ImportManagedSites.xaml</DependentUpon>
-    </Compile>
     <Compile Include="Windows\AddToDashboard.xaml.cs">
       <DependentUpon>AddToDashboard.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Windows\PasswordBoxAssistant.cs" />
     <Compile Include="Windows\Registration.xaml.cs">
       <DependentUpon>Registration.xaml</DependentUpon>
     </Compile>
     <Compile Include="Windows\ScheduledTaskConfig.xaml.cs">
       <DependentUpon>ScheduledTaskConfig.xaml</DependentUpon>
     </Compile>
+    <Resource Include="Assets\Images\QuickStart\PreviewDeployment.PNG" />
     <Page Include="Controls\AboutControl.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
@@ -139,36 +192,54 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\ManagedItem\MiscOptions.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Controls\ManagedItem\Deployment.xaml">
-      <SubType>Designer</SubType>
+    <Page Include="Controls\ManagedCertificate\ChallengeConfigItem.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\ManagedItem\Preview.xaml">
+    <Page Include="Controls\ManagedCertificate\DeploymentTask.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\ManagedItem\ScriptHooks.xaml">
+    <Page Include="Controls\ManagedCertificate\TestProgress.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Controls\ManagedItem\DomainAuthorization.xaml">
+    <Page Include="Controls\ManagedCertificate\StatusInfo.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Controls\ManagedItem\CertificateDomains.xaml">
+    <Page Include="Controls\ManagedCertificate\MiscOptions.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
-    <Page Include="Controls\ManagedItem\Settings.xaml">
+    <Page Include="Controls\ManagedCertificate\Deployment.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\ManagedSites.xaml">
+    <Page Include="Controls\ManagedCertificate\Preview.xaml">
       <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Controls\ManagedCertificate\ScriptHooks.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Controls\ManagedCertificate\DomainAuthorization.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Controls\ManagedCertificate\CertificateDomains.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Controls\ManagedCertificate\ManagedCertificateSettings.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Controls\ManagedCertificates.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Controls\ManagedCertificate\TabHeader.xaml">
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Controls\ProgressMonitor.xaml">
@@ -183,10 +254,6 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Controls\VaultExplorer.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
     <Page Include="MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -198,20 +265,17 @@
     <Compile Include="Controls\AboutControl.xaml.cs">
       <DependentUpon>AboutControl.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedItem\Settings.xaml.cs">
-      <DependentUpon>Settings.xaml</DependentUpon>
+    <Compile Include="Controls\ManagedCertificate\ManagedCertificateSettings.xaml.cs">
+      <DependentUpon>ManagedCertificateSettings.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Controls\ManagedSites.xaml.cs">
-      <DependentUpon>ManagedSites.xaml</DependentUpon>
+    <Compile Include="Controls\ManagedCertificates.xaml.cs">
+      <DependentUpon>ManagedCertificates.xaml</DependentUpon>
     </Compile>
     <Compile Include="Controls\ProgressMonitor.xaml.cs">
       <DependentUpon>ProgressMonitor.xaml</DependentUpon>
     </Compile>
     <Compile Include="Controls\Settings.xaml.cs">
       <DependentUpon>Settings.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Controls\VaultExplorer.xaml.cs">
-      <DependentUpon>VaultExplorer.xaml</DependentUpon>
     </Compile>
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
@@ -225,11 +289,15 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Windows\Feedback.xaml">
+    <Page Include="Windows\EditDeploymentTask.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
-    <Page Include="Windows\ImportManagedSites.xaml">
+    <Page Include="Windows\GettingStartedGuide.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Windows\Feedback.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
@@ -249,7 +317,7 @@
   <ItemGroup>
     <Compile Include="Utils\EnumConverter.cs" />
     <Compile Include="Utils\BooleanConverters.cs" />
-    <Compile Include="ViewModel\AppModel.cs" />
+    <Compile Include="ViewModel\AppViewModel.cs" />
     <Compile Include="ViewModel\RelayCommand.cs" />
     <Compile Include="Windows\EditContactDialog.xaml.cs">
       <DependentUpon>EditContactDialog.xaml</DependentUpon>
@@ -272,6 +340,9 @@
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
     <None Include="app.manifest" />
+    <Content Include="Plugins\readme.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -297,10 +368,6 @@
       <Project>{da0ccd9f-8cbd-4471-93e0-53bcfb6ca25e}</Project>
       <Name>Certify.CLI</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Certify.Core\Certify.Core.csproj">
-      <Project>{58881e46-4a76-47b9-9725-fa7c5f0090d0}</Project>
-      <Name>Certify.Core</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Certify.Locales\Certify.Locales.csproj">
       <Project>{1efdebe9-468b-4aa0-afd4-1c6d0a321be5}</Project>
       <Name>Certify.Locales</Name>
@@ -317,10 +384,7 @@
   <ItemGroup>
     <None Include="FodyWeavers.xml" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Resources\" />
-    <Folder Include="SampleData\" />
-  </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
     <BootstrapperPackage Include="Microsoft.Net.Framework.3.5.SP1">
       <Visible>False</Visible>
@@ -332,46 +396,53 @@
     <SplashScreen Include="Assets\Images\splashscreen.png" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="CommonServiceLocator">
-      <Version>2.0.2</Version>
+    <PackageReference Include="ControlzEx">
+      <Version>3.0.2.4</Version>
     </PackageReference>
     <PackageReference Include="Dragablz">
-      <Version>0.0.3.197</Version>
+      <Version>0.0.3.203</Version>
     </PackageReference>
     <PackageReference Include="Fody">
-      <Version>2.3.25</Version>
+      <Version>4.0.2</Version>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="FontAwesome.WPF">
       <Version>4.7.0.9</Version>
     </PackageReference>
     <PackageReference Include="MahApps.Metro">
-      <Version>1.5.0</Version>
+      <Version>1.6.5</Version>
+    </PackageReference>
+    <PackageReference Include="Markdig.Wpf">
+      <Version>0.2.7</Version>
     </PackageReference>
     <PackageReference Include="Microsoft.ApplicationInsights">
-      <Version>2.4.0</Version>
+      <Version>2.9.1</Version>
     </PackageReference>
     <PackageReference Include="NETStandard.Library">
-      <Version>2.0.1</Version>
+      <Version>2.0.3</Version>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json">
-      <Version>10.0.3</Version>
+      <Version>12.0.1</Version>
     </PackageReference>
     <PackageReference Include="PropertyChanged.Fody">
-      <Version>2.2.5</Version>
+      <Version>2.6.0</Version>
+    </PackageReference>
+    <PackageReference Include="Serilog">
+      <Version>2.8.0</Version>
     </PackageReference>
     <PackageReference Include="System.Diagnostics.DiagnosticSource">
-      <Version>4.4.1</Version>
+      <Version>4.5.1</Version>
     </PackageReference>
     <PackageReference Include="System.Net.Http">
-      <Version>4.3.3</Version>
+      <Version>4.3.4</Version>
     </PackageReference>
     <PackageReference Include="System.ValueTuple">
-      <Version>4.4.0</Version>
+      <Version>4.5.0</Version>
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\Images\QuickStart\ChooseAuth.PNG" />
-    <Resource Include="Assets\Images\QuickStart\ChooseDeployment.PNG" />
     <Resource Include="Assets\Images\QuickStart\ChooseDomains.PNG" />
     <Resource Include="Assets\Images\QuickStart\RequestCertificate.PNG" />
   </ItemGroup>

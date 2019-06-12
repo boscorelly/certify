@@ -1,39 +1,49 @@
 ﻿using System;
+using Certify.Models;
 
 namespace Certify.Management
 {
     public sealed class CoreAppSettings
     {
         private static volatile CoreAppSettings instance;
-        private static object syncRoot = new Object();
+        private static object syncRoot = new object();
 
         private CoreAppSettings()
         {
             // defaults
-            this.SettingsSchemaVersion = 1;
-            this.CheckForUpdatesAtStartup = true;
-            this.EnableAppTelematics = true;
-            this.IgnoreStoppedSites = true;
-            this.EnableValidationProxyAPI = true;
-            this.EnableAppTelematics = true;
-            this.EnableEFS = false;
-            this.RenewalIntervalDays = 14;
-            this.MaxRenewalRequests = 0;
-            this.LegacySettingsUpgraded = false;
-            this.VaultPath = @"C:\ProgramData\ACMESharp";
-            this.InstanceId = null;
+            SettingsSchemaVersion = 1;
+            CheckForUpdatesAtStartup = true;
+            EnableAppTelematics = true;
+            IgnoreStoppedSites = true;
+            EnableValidationProxyAPI = true;
+            EnableAppTelematics = true;
+            EnableEFS = false;
+            EnableDNSValidationChecks = false;
+            RenewalIntervalDays = 30;
+            MaxRenewalRequests = 0;
+            EnableHttpChallengeServer = true;
+            LegacySettingsUpgraded = false;
+            UseBackgroundServiceAutoRenewal = true;
+            EnableCertificateCleanup = true;
+            EnableStatusReporting = true;
+            VaultPath = @"C:\ProgramData\ACMESharp";
+            InstanceId = null;
         }
 
         public static CoreAppSettings Current
         {
             get
             {
-                if (instance == null)
+                if (instance != null)
                 {
-                    lock (syncRoot)
+                    return instance;
+                }
+
+                lock (syncRoot)
+                {
+                    if (instance == null)
                     {
-                        if (instance == null)
-                            instance = new CoreAppSettings();
+                        instance = new CoreAppSettings();
                     }
                 }
 
@@ -66,22 +76,24 @@ namespace Certify.Management
 
         public int MaxRenewalRequests { get; set; }
 
+        public bool EnableHttpChallengeServer { get; set; }
+
         public bool LegacySettingsUpgraded { get; set; }
 
         /// <summary>
-        /// If true, this instance has been added to server dashboard 
+        /// If true, this instance has been added to server dashboard
         /// </summary>
         public bool IsInstanceRegistered { get; set; }
 
         public string VaultPath { get; set; }
 
         /// <summary>
-        /// If user opts for renewal failure reporting, generated instance id is used to group results 
+        /// If user opts for renewal failure reporting, generated instance id is used to group results
         /// </summary>
         public string InstanceId { get; set; }
 
         /// <summary>
-        /// If set, specifies the UI language preference 
+        /// If set, specifies the UI language preference
         /// </summary>
         public string Language { get; set; }
 
@@ -89,7 +101,20 @@ namespace Certify.Management
         /// If true the background service will periodically perform auto renewals, otherwise auto
         /// renewal requires a scheduled task
         /// </summary>
-        public bool UseBackgroundServiceAutoRenewal { get; set; } = true;
+        public bool UseBackgroundServiceAutoRenewal { get; set; }
+
+        /// <summary>
+        /// If true, daily task performs cleanup of expired certificates created by the app
+        /// </summary>
+        public bool EnableCertificateCleanup { get; set; }
+
+        /// <summary>
+        /// If true, app sends renewal status reports and other user prompts (manual dns steps etc)
+        /// to the dashboard service
+        /// </summary>
+        public bool EnableStatusReporting { get; set; }
+
+        public CertificateCleanupMode? CertificateCleanupMode { get; set; }
     }
 
     public class SettingsManager
@@ -108,32 +133,51 @@ namespace Certify.Management
             CoreAppSettings.Current.IsInstanceRegistered = prefs.IsInstanceRegistered;
             CoreAppSettings.Current.Language = prefs.Language;
             CoreAppSettings.Current.UseBackgroundServiceAutoRenewal = prefs.UseBackgroundServiceAutoRenewal;
+            CoreAppSettings.Current.EnableHttpChallengeServer = prefs.EnableHttpChallengeServer;
+            CoreAppSettings.Current.EnableCertificateCleanup = prefs.EnableCertificateCleanup;
+
+            if (prefs.CertificateCleanupMode == null)
+            {
+                CoreAppSettings.Current.CertificateCleanupMode = CertificateCleanupMode.AfterExpiry;
+            }
+            else
+            {
+                CoreAppSettings.Current.CertificateCleanupMode = (CertificateCleanupMode)prefs.CertificateCleanupMode;
+            }
+
+            CoreAppSettings.Current.EnableStatusReporting = prefs.EnableStatusReporting;
             return true;
         }
 
         public static Models.Preferences ToPreferences()
         {
             LoadAppSettings();
-            Models.Preferences prefs = new Models.Preferences();
+            var prefs = new Models.Preferences
+            {
+                EnableAppTelematics = CoreAppSettings.Current.EnableAppTelematics,
+                EnableDNSValidationChecks = CoreAppSettings.Current.EnableDNSValidationChecks,
+                EnableValidationProxyAPI = CoreAppSettings.Current.EnableValidationProxyAPI,
+                IgnoreStoppedSites = CoreAppSettings.Current.IgnoreStoppedSites,
+                MaxRenewalRequests = CoreAppSettings.Current.MaxRenewalRequests,
+                RenewalIntervalDays = CoreAppSettings.Current.RenewalIntervalDays,
+                EnableEFS = CoreAppSettings.Current.EnableEFS,
+                InstanceId = CoreAppSettings.Current.InstanceId,
+                IsInstanceRegistered = CoreAppSettings.Current.IsInstanceRegistered,
+                Language = CoreAppSettings.Current.Language,
+                UseBackgroundServiceAutoRenewal = CoreAppSettings.Current.UseBackgroundServiceAutoRenewal,
+                EnableHttpChallengeServer = CoreAppSettings.Current.EnableHttpChallengeServer,
+                EnableCertificateCleanup = CoreAppSettings.Current.EnableCertificateCleanup,
+                EnableStatusReporting = CoreAppSettings.Current.EnableStatusReporting,
+                CertificateCleanupMode = CoreAppSettings.Current.CertificateCleanupMode
+            };
 
-            prefs.EnableAppTelematics = CoreAppSettings.Current.EnableAppTelematics;
-            prefs.EnableDNSValidationChecks = CoreAppSettings.Current.EnableDNSValidationChecks;
-            prefs.EnableValidationProxyAPI = CoreAppSettings.Current.EnableValidationProxyAPI;
-            prefs.IgnoreStoppedSites = CoreAppSettings.Current.IgnoreStoppedSites;
-            prefs.MaxRenewalRequests = CoreAppSettings.Current.MaxRenewalRequests;
-            prefs.RenewalIntervalDays = CoreAppSettings.Current.RenewalIntervalDays;
-            prefs.EnableEFS = CoreAppSettings.Current.EnableEFS;
-            prefs.InstanceId = CoreAppSettings.Current.InstanceId;
-            prefs.IsInstanceRegistered = CoreAppSettings.Current.IsInstanceRegistered;
-            prefs.Language = CoreAppSettings.Current.Language;
-            prefs.UseBackgroundServiceAutoRenewal = CoreAppSettings.Current.UseBackgroundServiceAutoRenewal;
             return prefs;
         }
 
         public static void SaveAppSettings()
         {
-            string appDataPath = Util.GetAppDataFolder();
-            string json = Newtonsoft.Json.JsonConvert.SerializeObject(CoreAppSettings.Current, Newtonsoft.Json.Formatting.Indented);
+            var appDataPath = Util.GetAppDataFolder();
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(CoreAppSettings.Current, Newtonsoft.Json.Formatting.Indented);
 
             lock (COREAPPSETTINGSFILE)
             {
@@ -143,8 +187,9 @@ namespace Certify.Management
 
         public static void LoadAppSettings()
         {
-            string appDataPath = Util.GetAppDataFolder();
+            var appDataPath = Util.GetAppDataFolder();
             var path = appDataPath + "\\" + COREAPPSETTINGSFILE;
+
             if (System.IO.File.Exists(path))
             {
                 //ensure permissions
@@ -152,36 +197,32 @@ namespace Certify.Management
                 //load content
                 lock (COREAPPSETTINGSFILE)
                 {
-                    string configData = System.IO.File.ReadAllText(path);
+                    var configData = System.IO.File.ReadAllText(path);
                     CoreAppSettings.Current = Newtonsoft.Json.JsonConvert.DeserializeObject<CoreAppSettings>(configData);
+
+                    // init new settings if not set
+                    if (CoreAppSettings.Current.CertificateCleanupMode == null)
+                    {
+                        CoreAppSettings.Current.CertificateCleanupMode = CertificateCleanupMode.AfterExpiry;
+                    }
+
                 }
             }
             else
             {
-                // no core app settings yet, migrate from old settings
-                //Certify.Properties.Settings.Default.Reload();
-                //var oldProps = Certify.Properties.Settings.Default;
-                /* CoreAppSettings.Current.CheckForUpdatesAtStartup = oldProps.CheckForUpdatesAtStartup;
-                 CoreAppSettings.Current.EnableAppTelematics = oldProps.EnableAppTelematics;
-                 CoreAppSettings.Current.EnableDNSValidationChecks = oldProps.EnableDNSValidationChecks;
-                 CoreAppSettings.Current.EnableEFS = oldProps.EnableEFS;
-                 CoreAppSettings.Current.EnableValidationProxyAPI = oldProps.EnableValidationProxyAPI;
-                 CoreAppSettings.Current.IgnoreStoppedSites = oldProps.ShowOnlyStartedWebsites;
-                 CoreAppSettings.Current.RenewalIntervalDays = oldProps.RenewalIntervalDays;
-                 CoreAppSettings.Current.MaxRenewalRequests = oldProps.MaxRenewalRequests;
-                 CoreAppSettings.Current.VaultPath = oldProps.VaultPath;*/
+                // no core app settings yet
 
                 CoreAppSettings.Current.LegacySettingsUpgraded = true;
                 CoreAppSettings.Current.IsInstanceRegistered = false;
                 CoreAppSettings.Current.Language = null;
-                CoreAppSettings.Current.UseBackgroundServiceAutoRenewal = true;
+                CoreAppSettings.Current.CertificateCleanupMode = CertificateCleanupMode.AfterExpiry;
 
                 CoreAppSettings.Current.InstanceId = Guid.NewGuid().ToString();
                 SaveAppSettings();
             }
 
             // if instance id not yet set, create it now and save
-            if (String.IsNullOrEmpty(CoreAppSettings.Current.InstanceId))
+            if (string.IsNullOrEmpty(CoreAppSettings.Current.InstanceId))
             {
                 CoreAppSettings.Current.InstanceId = Guid.NewGuid().ToString();
                 SaveAppSettings();

@@ -1,46 +1,102 @@
-using Certify.Locales;
-using Certify.Models;
-using Microsoft.ApplicationInsights;
-using Microsoft.Win32;
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
+using Certify.Locales;
+using Certify.Models;
+using Certify.Models.Config;
+using Microsoft.ApplicationInsights;
+using Microsoft.Win32;
 
 namespace Certify.Management
 {
     public class Util
     {
-        public const string APPDATASUBFOLDER = "Certify";
 
-        public static void SetSupportedTLSVersions()
+        /// <summary>
+        /// check for problems which could affect app use
+        /// </summary>
+        /// <returns>  </returns>
+        public static async Task<List<ActionResult>> PerformAppDiagnostics()
         {
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
-        }
+            var results = new List<ActionResult>();
 
-        public static string GetAppDataFolder(string subFolder = null)
-        {
-            var parts = new List<string>()
+            var tempPath = "";
+            var tempFolder = Path.GetTempPath();
+
+            // attempt to create a 1MB temp file, detect if it fails
+            try
             {
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                APPDATASUBFOLDER
-            };
+                tempPath = Path.GetTempFileName();
 
-            if (subFolder != null) parts.Add(subFolder);
+                var fs = new FileStream(tempPath, FileMode.Open);
+                fs.Seek(1024 * 1024, SeekOrigin.Begin);
+                fs.WriteByte(0);
+                fs.Close();
 
-            var path = Path.Combine(parts.ToArray());
-
-            if (!Directory.Exists(path))
+                File.Delete(tempPath);
+                results.Add(new ActionResult { IsSuccess = true, Message = $"Created test temp file OK." });
+            }
+            catch (Exception exp)
             {
-                Directory.CreateDirectory(path);
+                results.Add(new ActionResult { IsSuccess = false, Message = $"Could not create a temp file ({tempPath}). Windows has a limit of 65535 files in the temp folder ({tempFolder}). Clear temp files before proceeding. {exp.Message}" });
             }
 
-            return path;
+            // check free disk space
+            try
+            {
+                var cDrive = new DriveInfo("c");
+                if (cDrive.IsReady)
+                {
+                    var freeSpaceBytes = cDrive.AvailableFreeSpace;
+
+                    // Check disk has at least 128MB free
+                    if (freeSpaceBytes < (1024L * 1024 * 128))
+                    {
+                        results.Add(new ActionResult { IsSuccess = false, Message = $"Drive C: has less than 128MB of disk space free. The application may not run correctly." });
+                    }
+                    else
+                    {
+                        results.Add(new ActionResult { IsSuccess = true, Message = $"Drive C: has more than 128MB of disk space free." });
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                results.Add(new ActionResult { IsSuccess = false, Message = $"Could not check how much disk space is left on drive C:" });
+            }
+
+            // check internet time service
+
+            var timeResult = await CheckTimeServer();
+            if (timeResult != null)
+            {
+                var diff = timeResult - DateTime.Now;
+                if (Math.Abs(diff.Value.TotalSeconds) > 50)
+                {
+                    results.Add(new ActionResult { IsSuccess = false, Message = $"Note: Your system time does not appear to be in sync with an internet time service, this can result in certificate request errors." });
+                } else
+                {
+                    results.Add(new ActionResult { IsSuccess = true, Message = $"System time is correct." });
+                }
+                
+            } else
+            {
+                results.Add(new ActionResult { IsSuccess = false, Message = $"Note: Could not confirm system time sync using a public NTP server. Ensure system time is correct to avoid certificate request errors." });
+            }
+
+            return results;
         }
+
+        public static void SetSupportedTLSVersions() => ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12;
+
+        public static string GetAppDataFolder(string subFolder = null) => SharedUtils.ServiceConfigManager.GetAppDataFolder(subFolder);
 
         public TelemetryClient InitTelemetry()
         {
@@ -58,10 +114,16 @@ namespace Certify.Management
             return tc;
         }
 
-        public Version GetAppVersion()
+        public static string GetUserAgent()
+        {
+            var versionName = "Certify/" + GetAppVersion().ToString();
+            return $"{versionName} (Windows; {Environment.OSVersion.ToString()}) ";
+        }
+
+        public static Version GetAppVersion()
         {
             // returns the version of Certify.Shared
-            System.Reflection.Assembly assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
 
             var v = assembly.GetName().Version;
             return v;
@@ -70,24 +132,23 @@ namespace Certify.Management
         public async Task<UpdateCheck> CheckForUpdates()
         {
             var v = GetAppVersion();
-            return await this.CheckForUpdates(v);
+            return await CheckForUpdates(v);
         }
 
-        public async Task<UpdateCheck> CheckForUpdates(Version appVersion)
-        {
-            return await this.CheckForUpdates(appVersion.ToString());
-        }
+        public async Task<UpdateCheck> CheckForUpdates(Version appVersion) => await CheckForUpdates(appVersion.ToString());
 
         public async Task<UpdateCheck> CheckForUpdates(string appVersion)
         {
             //get app version
             try
             {
-                HttpClient client = new HttpClient();
-                var response = await client.GetAsync(ConfigResources.APIBaseURI + "update?version=" + appVersion);
+                var client = new HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", Util.GetUserAgent());
+
+                var response = await client.GetAsync(Models.API.Config.APIBaseURI + "update?version=" + appVersion);
                 if (response.IsSuccessStatusCode)
                 {
-                    string json = await response.Content.ReadAsStringAsync();
+                    var json = await response.Content.ReadAsStringAsync();
                     /*json = @"{
                          'version': {
                              'major': 2,
@@ -102,7 +163,7 @@ namespace Certify.Management
                            }
                      }";*/
 
-                    UpdateCheck checkResult = Newtonsoft.Json.JsonConvert.DeserializeObject<UpdateCheck>(json);
+                    var checkResult = Newtonsoft.Json.JsonConvert.DeserializeObject<UpdateCheck>(json);
                     return CompareVersions(appVersion, checkResult);
                 }
 
@@ -143,15 +204,15 @@ namespace Certify.Management
                     sha = (SHA256)new System.Security.Cryptography.SHA256Cng();
                 }
 
-                byte[] checksum = sha.ComputeHash(bufferedStream);
-                return BitConverter.ToString(checksum).Replace("-", String.Empty).ToLower();
+                var checksum = sha.ComputeHash(bufferedStream);
+                return BitConverter.ToString(checksum).Replace("-", string.Empty).ToLower();
             }
         }
 
         /// <summary>
-        /// Gets the certificate the file is signed with. 
+        /// Gets the certificate the file is signed with.
         /// </summary>
-        /// <param name="filename">
+        /// <param name="filename"> 
         /// The path of the signed file from which to create the X.509 certificate.
         /// </param>
         /// <returns> The certificate the file is signed with </returns>
@@ -163,8 +224,8 @@ namespace Certify.Management
             {
                 cert = new X509Certificate2(X509Certificate.CreateFromSignedFile(filename));
 
-                X509Chain chain = new X509Chain();
-                X509ChainPolicy chainPolicy = new X509ChainPolicy()
+                var chain = new X509Chain();
+                var chainPolicy = new X509ChainPolicy()
                 {
                     RevocationMode = X509RevocationMode.Online,
                     RevocationFlag = X509RevocationFlag.EntireChain
@@ -173,9 +234,9 @@ namespace Certify.Management
 
                 if (chain.Build(cert))
                 {
-                    foreach (X509ChainElement chainElement in chain.ChainElements)
+                    foreach (var chainElement in chain.ChainElements)
                     {
-                        foreach (X509ChainStatus chainStatus in chainElement.ChainElementStatus)
+                        foreach (var chainStatus in chainElement.ChainElementStatus)
                         {
                             System.Diagnostics.Debug.WriteLine(chainStatus.StatusInformation);
                         }
@@ -190,7 +251,7 @@ namespace Certify.Management
             {
                 Console.WriteLine("Error {0} : {1}", e.GetType(), e.Message);
                 Console.WriteLine("Couldn't parse the certificate." +
-                                  "Be sure it is a X.509 certificate");
+                                  "Be sure it is an X.509 certificate");
                 return null;
             }
             return cert;
@@ -198,8 +259,8 @@ namespace Certify.Management
 
         public bool VerifyUpdateFile(string tempFile, string expectedHash, bool throwOnDeviation = true)
         {
-            bool signatureVerified = false;
-            bool hashVerified = false;
+            var signatureVerified = false;
+            var hashVerified = false;
 
             //get verified signed file cert
             var cert = GetFileCertificate(tempFile);
@@ -256,19 +317,20 @@ namespace Certify.Management
 
         public async Task<UpdateCheck> DownloadUpdate()
         {
-            string pathname = Path.GetTempPath();
+            var pathname = Path.GetTempPath();
 
             var result = await CheckForUpdates();
 
             if (result.IsNewerVersion)
             {
-                HttpClient client = new HttpClient();
+                var client = new HttpClient();
+                client.DefaultRequestHeaders.Add("User-Agent", Util.GetUserAgent());
 
                 //https://github.com/dotnet/corefx/issues/6849
                 var tempFile = Path.Combine(new string[] { pathname, "CertifySSL_" + result.Version.ToString() + "_Setup.tmp" });
                 var setupFile = tempFile.Replace(".tmp", ".exe");
 
-                bool downloadVerified = false;
+                var downloadVerified = false;
                 if (File.Exists(setupFile))
                 {
                     // file already downloaded, see if it's already valid
@@ -283,7 +345,7 @@ namespace Certify.Management
                     // download and verify new setup
                     try
                     {
-                        using (HttpResponseMessage response = client.GetAsync(result.Message.DownloadFileURL, HttpCompletionOption.ResponseHeadersRead).Result)
+                        using (var response = client.GetAsync(result.Message.DownloadFileURL, HttpCompletionOption.ResponseHeadersRead).Result)
                         {
                             response.EnsureSuccessStatusCode();
 
@@ -328,7 +390,11 @@ namespace Certify.Management
                     if (!downloadVerified && VerifyUpdateFile(tempFile, result.Message.SHA256, throwOnDeviation: true))
                     {
                         downloadVerified = true;
-                        if (File.Exists(setupFile)) File.Delete(setupFile); //delete existing file
+                        if (File.Exists(setupFile))
+                        {
+                            File.Delete(setupFile); //delete existing file
+                        }
+
                         File.Move(tempFile, setupFile); // final setup file
                     }
                 }
@@ -343,14 +409,14 @@ namespace Certify.Management
         }
 
         /// <summary>
-        /// From https://docs.microsoft.com/en-us/dotnet/framework/migration-guide/how-to-determine-which-versions-are-installed#net_d 
+        /// From https://docs.microsoft.com/en-us/dotnet/framework/migration-guide/how-to-determine-which-versions-are-installed#net_d
         /// </summary>
-        /// <returns></returns>
+        /// <returns>  </returns>
         public static string GetDotNetVersion()
         {
             const string subkey = @"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full\";
 
-            using (RegistryKey ndpKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32).OpenSubKey(subkey))
+            using (var ndpKey = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry32).OpenSubKey(subkey))
             {
                 if (ndpKey != null && ndpKey.GetValue("Release") != null)
                 {
@@ -365,17 +431,110 @@ namespace Certify.Management
 
         private static string GetDotNetVersion(int releaseKey)
         {
-            if (releaseKey >= 460798) return "4.7 or later";
-            if (releaseKey >= 394802) return "4.6.2";
-            if (releaseKey >= 394254) return "4.6.1";
-            if (releaseKey >= 393295) return "4.6";
-            if (releaseKey >= 379893) return "4.5.2";
-            if (releaseKey >= 378675) return "4.5.1";
-            if (releaseKey >= 378389) return "4.5";
+            if (releaseKey >= 460798)
+            {
+                return "4.7 or later";
+            }
+
+            if (releaseKey >= 394802)
+            {
+                return "4.6.2";
+            }
+
+            if (releaseKey >= 394254)
+            {
+                return "4.6.1";
+            }
+
+            if (releaseKey >= 393295)
+            {
+                return "4.6";
+            }
+
+            if (releaseKey >= 379893)
+            {
+                return "4.5.2";
+            }
+
+            if (releaseKey >= 378675)
+            {
+                return "4.5.1";
+            }
+
+            if (releaseKey >= 378389)
+            {
+                return "4.5";
+            }
 
             // This code should never execute. A non-null release key should mean that 4.5 or later
             // is installed.
             return "No 4.5 or later version detected";
+        }
+
+
+        public static string ToUrlSafeBase64String(byte[] data)
+        {
+            var s = Convert.ToBase64String(data);
+            s = s.Split('=')[0]; // Remove any trailing '='s
+            s = s.Replace('+', '-'); // 62nd char of encoding
+            s = s.Replace('/', '_'); // 63rd char of encoding
+            return s;
+        }
+
+        public static string ToUrlSafeBase64String(string val)
+        {
+            var bytes = System.Text.UTF8Encoding.UTF8.GetBytes(val);
+            return ToUrlSafeBase64String(bytes);
+        }
+
+        public static async Task<DateTime?> CheckTimeServer()
+        {
+            // https://stackoverflow.com/questions/1193955/how-to-query-an-ntp-server-using-c
+
+            try
+            {
+                const string NtpServer = "pool.ntp.org";
+
+                const int DaysTo1900 = 1900 * 365 + 95; // 95 = offset for leap-years etc.
+                const long TicksPerSecond = 10000000L;
+                const long TicksPerDay = 24 * 60 * 60 * TicksPerSecond;
+                const long TicksTo1900 = DaysTo1900 * TicksPerDay;
+
+                var ntpData = new byte[48];
+                ntpData[0] = 0x1B; // LeapIndicator = 0 (no warning), VersionNum = 3 (IPv4 only), Mode = 3 (Client Mode)
+
+                var addresses = Dns.GetHostEntry(NtpServer).AddressList;
+                var ipEndPoint = new IPEndPoint(addresses[0], 123);
+                long pingDuration = Stopwatch.GetTimestamp(); // temp access (JIT-Compiler need some time at first call)
+                using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
+                {
+                    await socket.ConnectAsync(ipEndPoint);
+                    socket.ReceiveTimeout = 5000;
+                    socket.Send(ntpData);
+                    pingDuration = Stopwatch.GetTimestamp(); // after Send-Method to reduce WinSocket API-Call time
+
+                    socket.Receive(ntpData);
+                    pingDuration = Stopwatch.GetTimestamp() - pingDuration;
+                }
+
+                long pingTicks = pingDuration * TicksPerSecond / Stopwatch.Frequency;
+
+                // optional: display response-time
+                // Console.WriteLine("{0:N2} ms", new TimeSpan(pingTicks).TotalMilliseconds);
+
+                long intPart = (long)ntpData[40] << 24 | (long)ntpData[41] << 16 | (long)ntpData[42] << 8 | ntpData[43];
+                long fractPart = (long)ntpData[44] << 24 | (long)ntpData[45] << 16 | (long)ntpData[46] << 8 | ntpData[47];
+                long netTicks = intPart * TicksPerSecond + (fractPart * TicksPerSecond >> 32);
+
+                var networkDateTime = new DateTime(TicksTo1900 + netTicks + pingTicks / 2);
+
+                return networkDateTime.ToLocalTime(); // without ToLocalTime() = faster
+            }
+            catch
+            {
+                // fail
+                return null;
+            }
         }
     }
 }

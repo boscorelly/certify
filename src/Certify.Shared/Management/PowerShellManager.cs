@@ -1,10 +1,10 @@
-﻿using Certify.Models;
-using System;
+﻿using System;
 using System.IO;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Text;
 using System.Threading.Tasks;
+using Certify.Models;
 
 namespace Certify.Management
 {
@@ -23,26 +23,32 @@ namespace Certify.Management
                 throw new ArgumentException($"File '{scriptFile}' is not a powershell script.");
             }
 
+            var config = SharedUtils.ServiceConfigManager.GetAppServiceConfig();
+
             try
             {
                 // create a new runspace to isolate the scripts
                 using (var runspace = RunspaceFactory.CreateRunspace())
                 {
                     runspace.Open();
-                    
-                    // set working directory to the script file's directory 
+
+                    // set working directory to the script file's directory
                     runspace.SessionStateProxy.Path.SetLocation(scriptInfo.DirectoryName);
 
-                    using (PowerShell shell = PowerShell.Create())
+                    using (var shell = PowerShell.Create())
                     {
                         shell.Runspace = runspace;
 
-                        // ensure execution policy will allow the script to run
-                        shell.AddCommand("Set-ExecutionPolicy")
-                                .AddParameter("ExecutionPolicy", "Unrestricted")
-                                .AddParameter("Scope", "Process")
-                                .AddParameter("Force")
-                                .Invoke();
+                        // ensure execution policy will allow the script to run, default to "Unrestricted", set in service config as "Default" to skip.
+
+                        if (config.PowershellExecutionPolicy != "Default")
+                        {
+                            shell.AddCommand("Set-ExecutionPolicy")
+                                    .AddParameter("ExecutionPolicy", config.PowershellExecutionPolicy)
+                                    .AddParameter("Scope", "Process")
+                                    .AddParameter("Force")
+                                    .Invoke();
+                        }
 
                         // add script command to invoke
                         shell.AddCommand(scriptFile);
@@ -57,7 +63,7 @@ namespace Certify.Management
                         shell.Streams.Error.DataAdded += (sender, args) =>
                         {
                             var error = shell.Streams.Error[args.Index];
-                            string src = error.InvocationInfo.MyCommand?.ToString() ?? error.InvocationInfo.InvocationName;
+                            var src = error.InvocationInfo.MyCommand?.ToString() ?? error.InvocationInfo.InvocationName;
                             output.AppendLine($"{src}: {error}\n{error.InvocationInfo.PositionMessage}");
                         };
                         // capture write-* methods (except write-host)
@@ -69,8 +75,11 @@ namespace Certify.Management
                         outputData.DataAdded += (sender, args) =>
                         {
                             // capture all main output
-                            object data = outputData[args.Index]?.BaseObject;
-                            if (data != null) output.AppendLine(data.ToString());
+                            var data = outputData[args.Index]?.BaseObject;
+                            if (data != null)
+                            {
+                                output.AppendLine(data.ToString());
+                            }
                         };
                         await Task.Run(() =>
                         {
@@ -82,7 +91,7 @@ namespace Certify.Management
                             catch (ParseException ex)
                             {
                                 // this should only happen in case of script syntax errors, otherwise
-                                // errors would be output via the invoke's error stream 
+                                // errors would be output via the invoke's error stream
                                 output.AppendLine($"{ex.Message}");
                             }
                         });

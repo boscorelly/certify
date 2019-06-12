@@ -1,28 +1,32 @@
-﻿using Certify.Management;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
+using Certify.Core.Management;
+using Certify.Management;
 using Certify.Management.Servers;
 using Certify.Models;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Threading.Tasks;
 
 namespace Certify.Core.Tests
 {
     [TestClass]
     /// <summary>
-    /// Integration tests for IIS Manager 
+    /// Integration tests for IIS Manager
     /// </summary>
     public class IISManagerTests : IntegrationTestBase, IDisposable
     {
         private ServerProviderIIS iisManager;
         private string testSiteName = "Test2CertRequest";
-        private string testSiteDomain = "test.com";
-        private int testSiteHttpPort = 81;
+        private readonly string testSiteDomain = "test.com";
+        private readonly int testSiteHttpPort = 81;
 
         private string testSitePath = "c:\\inetpub\\wwwroot";
+        private string _siteId = "";
 
         public IISManagerTests()
         {
@@ -32,223 +36,362 @@ namespace Certify.Core.Tests
             testSiteDomain = "integration2." + PrimaryTestDomain;
 
             //perform setup for IIS
-            SetupIIS();
+            SetupIIS().Wait();
         }
 
         /// <summary>
-        /// Perform teardown for IIS 
+        /// Perform teardown for IIS
         /// </summary>
-        public void Dispose()
-        {
-            TeardownIIS();
-        }
+        public void Dispose() => TeardownIIS().Wait();
 
-        public void SetupIIS()
+        public async Task SetupIIS()
         {
-            if (iisManager.SiteExists(testSiteName))
+            if (await iisManager.SiteExists(testSiteName))
             {
-                iisManager.DeleteSite(testSiteName);
+                await iisManager.DeleteSite(testSiteName);
             }
-            iisManager.CreateSite(testSiteName, testSiteDomain, PrimaryIISRoot, "DefaultAppPool");
-            Assert.IsTrue(iisManager.SiteExists(testSiteName));
+            var site = iisManager.CreateSite(testSiteName, testSiteDomain, PrimaryIISRoot, "DefaultAppPool");
+            _siteId = site.Id.ToString();
+            Assert.IsTrue(await iisManager.SiteExists(testSiteName));
         }
 
-        public void TeardownIIS()
+        public async Task TeardownIIS()
         {
-            iisManager.DeleteSite(testSiteName);
-            Assert.IsFalse(iisManager.SiteExists(testSiteName));
-        }
-
-        [TestMethod]
-        public void TestSiteExists()
-        {
-            //site exists and matches required domain
-            var site = iisManager.GetSiteByDomain(testSiteDomain);
-            Assert.AreEqual(site.Name, testSiteName);
+            await iisManager.DeleteSite(testSiteName);
+            Assert.IsFalse(await iisManager.SiteExists(testSiteName));
         }
 
         [TestMethod]
-        public void TestIISVersionCheck()
+        public async Task TestIISVersionCheck()
         {
-            var version = iisManager.GetServerVersion();
+            var version = await iisManager.GetServerVersion();
             Assert.IsTrue(version.Major >= 7);
         }
 
         [TestMethod]
-        public void TestIISSiteRunning()
+        public async Task TestIISSiteRunning()
         {
-            var site = iisManager.GetSiteByDomain(testSiteDomain);
-
             //this site should be running
-            bool isRunning = iisManager.IsSiteRunning(site.Id.ToString());
+            var isRunning = await iisManager.IsSiteRunning(_siteId);
             Assert.IsTrue(isRunning);
 
             //this site should not be running
-            isRunning = iisManager.IsSiteRunning("MadeUpSiteName");
+            isRunning = await iisManager.IsSiteRunning("MadeUpSiteId");
             Assert.IsFalse(isRunning);
         }
 
         [TestMethod]
-        public void TestGetBinding()
+        public async Task TestGetBinding()
         {
-            var b = iisManager.GetSiteBindingByDomain(testSiteDomain);
+            var b = await iisManager.GetSiteBindingByDomain(testSiteDomain);
             Assert.AreEqual(b.Host, testSiteDomain);
 
-            b = iisManager.GetSiteBindingByDomain("randomdomain.com");
+            b = await iisManager.GetSiteBindingByDomain("randomdomain.com");
             Assert.IsNull(b);
         }
 
         [TestMethod]
-        public void TestCreateUnusalBindings()
+        public async Task TestCreateUnusualBindings()
         {
+            var siteName = "MSMQTest";
             //delete test if it exists
-            iisManager.DeleteSite("MSMQTest");
+            if (await iisManager.SiteExists(siteName))
+            {
+                await iisManager.DeleteSite(siteName);
+            }
 
-            // create net.msmq://localhost binding, no port or ip
-            iisManager.CreateSite("MSMQTest", "localhost", PrimaryIISRoot, null, protocol: "net.msmq", ipAddress: null, port: null);
+            try
+            {
+                // create net.msmq://localhost binding, no port or ip
+                await iisManager.CreateSite(siteName, "localhost", PrimaryIISRoot, null, protocol: "net.msmq", ipAddress: null, port: null);
 
-            var sites = iisManager.GetSiteBindingList(false);
+                var sites = iisManager.GetSiteBindingList(false);
+            }
+            finally
+            {
+                await iisManager.DeleteSite(siteName);
+            }
         }
 
         [TestMethod]
-        public void TestCreateFixedIPBindings()
+        public async Task TestCreateFixedIPBindings()
         {
             var testName = testSiteName + "FixedIP";
             var testDomainName = "FixedIPtest.com";
-            if (iisManager.SiteExists(testName))
+            if (await iisManager.SiteExists(testName))
             {
-                iisManager.DeleteSite(testName);
+                await iisManager.DeleteSite(testName);
             }
 
-            var ipAddress =
-            Dns.GetHostEntry(Dns.GetHostName()).AddressList[0].ToString();
-            iisManager.CreateSite(testName, testDomainName, PrimaryIISRoot, "DefaultAppPool", "http", ipAddress);
+            try
+            {
+                var ipAddress = Dns.GetHostEntry(Dns.GetHostName()).AddressList[0].ToString();
+                var site = await iisManager.CreateSite(testName, testDomainName, PrimaryIISRoot, "DefaultAppPool", "http", ipAddress);
 
-            Assert.IsTrue(iisManager.SiteExists(testSiteName));
-            var site = iisManager.GetSiteByDomain(testDomainName);
-            Assert.IsTrue(site.Bindings.Any(b => b.Host == testDomainName && b.BindingInformation.Contains(ipAddress)));
+                Assert.IsTrue(await iisManager.SiteExists(testSiteName));
+
+                Assert.IsTrue(site.Bindings.Any(b => b.Host == testDomainName && b.BindingInformation.Contains(ipAddress)));
+            }
+            finally
+            {
+                await iisManager.DeleteSite(testName);
+            }
         }
 
         [TestMethod]
-        public void TestTooManyBindings()
+        public async Task TestManySiteBindingUpdates()
+        {
+            var numSites = 100;
+            // create a large number of site bindings, to see if we encounter isses saving IIS changes
+
+            try
+            {
+                var allResults = new List<ActionStep>();
+                for (var i = 0; i < numSites; i++)
+                {
+                    var domain = "site_" + i + "_toomany.com";
+                    var testSiteName = "ManySites_" + i;
+                    if (await iisManager.SiteExists(testSiteName))
+                    {
+                        await iisManager.DeleteSite(testSiteName);
+                    }
+
+                    await iisManager.CreateSite(testSiteName, "site_" + i + "_toomany.com", PrimaryIISRoot, null, protocol: "http");
+                    var site = await iisManager.GetSiteBindingByDomain(domain);
+                    for (var d = 0; d < 2; d++)
+                    {
+                        var testDomain = Guid.NewGuid().ToString() + domain;
+
+                        allResults.Add(await iisManager.AddOrUpdateSiteBinding(new BindingInfo
+                        {
+                            SiteId = site.SiteId,
+                            Host = testDomain,
+                            PhysicalPath = PrimaryIISRoot
+                        }, addNew: true));
+                    }
+                }
+
+                // now attempt async creation of bindings
+                var allBindingTasksSet1 = new List<Task<ActionStep>>();
+                var allBindingTasksSet2 = new List<Task<ActionStep>>();
+                for (var i = 0; i < numSites; i++)
+                {
+                    var domain = "site_" + i + "_toomany.com";
+                    var testSiteName = "ManySites_" + i;
+
+                    var site = await iisManager.GetSiteBindingByDomain(domain);
+
+                    for (var d = 0; d < 2; d++)
+                    {
+                        var testDomain = Guid.NewGuid().ToString() + domain;
+
+                        if (i < numSites / 2)
+                        {
+                            allBindingTasksSet1.Add(iisManager.AddOrUpdateSiteBinding(new BindingInfo
+                            {
+                                SiteId = site.SiteId,
+                                Host = testDomain,
+                                PhysicalPath = PrimaryIISRoot
+                            }, addNew: true));
+                        }
+                        else
+                        {
+                            allBindingTasksSet2.Add(iisManager.AddOrUpdateSiteBinding(new BindingInfo
+                            {
+                                SiteId = site.SiteId,
+                                Host = testDomain,
+                                PhysicalPath = PrimaryIISRoot
+                            }, addNew: true));
+                        }
+                    }
+                }
+
+                ThreadPool.QueueUserWorkItem(async x =>
+                {
+                    Thread.Sleep(500);
+                    var results = await Task.WhenAll<ActionStep>(allBindingTasksSet1);
+
+                    // verify all actions ok
+                    Assert.IsFalse(results.Any(r => r.HasError), "Thread1: One or more actions failed");
+                });
+
+                ThreadPool.QueueUserWorkItem(async x =>
+                {
+                    var results = await Task.WhenAll<ActionStep>(allBindingTasksSet2);
+
+                    // verify all actions ok
+                    Assert.IsFalse(results.Any(r => r.HasError), "Thread2: One or more actions failed");
+                });
+            }
+            finally
+            {
+                // now clean up
+                for (var i = 0; i < numSites; i++)
+                {
+                    var testSiteName = "ManySites_" + i;
+                    var domain = "site_" + i + "_toomany.com";
+                    try
+                    {
+                        await iisManager.DeleteSite(testSiteName);
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        [TestMethod]
+        public async Task TestTooManyBindings()
         {
             //delete test if it exists
-            if (iisManager.SiteExists("ManyBindings"))
+            if (await iisManager.SiteExists("ManyBindings"))
             {
-                iisManager.DeleteSite("ManyBindings");
+                await iisManager.DeleteSite("ManyBindings");
             }
 
-            // create net.msmq://localhost binding, no port or ip
-            iisManager.CreateSite("ManyBindings", "toomany.com", PrimaryIISRoot, null, protocol: "http");
-            var site = iisManager.GetSiteBindingByDomain("toomany.com");
-            List<string> domains = new List<string>();
-            for (var i = 0; i < 10000; i++)
+            try
             {
-                domains.Add(Guid.NewGuid().ToString() + ".toomany.com");
+                // create net.msmq://localhost binding, no port or ip
+                await iisManager.CreateSite("ManyBindings", "toomany.com", PrimaryIISRoot, null, protocol: "http");
+                var site = await iisManager.GetSiteBindingByDomain("toomany.com");
+                var domains = new List<string>();
+                for (var i = 0; i < 101; i++)
+                {
+                    domains.Add(Guid.NewGuid().ToString() + ".toomany.com");
+                }
+                await iisManager.AddSiteBindings(site.SiteId, domains);
             }
-            iisManager.AddSiteBindings(site.SiteId, domains);
+            finally
+            {
+                await iisManager.DeleteSite("ManyBindings");
+            }
         }
 
         [TestMethod]
-        public void TestLongBinding()
+        public async Task TestLongBinding()
         {
             var testName = testSiteName + "LongBinding";
             var testDomainName = "86098fca1cae7442046562057b1ea940.f3368e3a3240d27430a814c46f7b2c5d.acme.invalid";
-            if (iisManager.SiteExists(testName))
+            if (await iisManager.SiteExists(testName))
             {
-                iisManager.DeleteSite(testName);
+                await iisManager.DeleteSite(testName);
             }
-            iisManager.CreateSite(testName, testDomainName, PrimaryIISRoot, null);
-            var site = iisManager.GetSiteByDomain(testDomainName);
-            var certStoreName = "MY";
-            var cert = CertificateManager.GetCertificatesFromStore().First();
-            iisManager.InstallCertificateforBinding(certStoreName, cert.GetCertHash(), site, testDomainName);
 
-            Assert.IsTrue(iisManager.SiteExists(testName));
+            var site = await iisManager.CreateSite(testName, testDomainName, PrimaryIISRoot, null);
+
+            try
+            {
+                var certStoreName = "MY";
+                var cert = CertificateManager.GetCertificatesFromStore().First();
+                await new IISBindingDeploymentTarget().AddBinding(
+                    new BindingInfo
+                    {
+                        Host = testDomainName,
+                        CertificateHashBytes = cert.GetCertHash(),
+                        CertificateStore = certStoreName,
+                        Port = 443,
+                        Protocol = "https",
+                        SiteId = site.Id.ToString()
+                    }
+                   );
+
+                Assert.IsTrue(await iisManager.SiteExists(testName));
+            }
+            finally
+            {
+                await iisManager.DeleteSite(testName);
+            }
         }
 
         [TestMethod]
-        public void TestPrimarySites()
+        public async Task TestPrimarySites()
         {
             //get all sites
-            var sites = iisManager.GetPrimarySites(includeOnlyStartedSites: false);
+            var sites = await iisManager.GetPrimarySites(includeOnlyStartedSites: false);
             Assert.IsTrue(sites.Any());
 
             //get all sites excluding stopped sites
-            sites = iisManager.GetPrimarySites(includeOnlyStartedSites: true);
+            sites = await iisManager.GetPrimarySites(includeOnlyStartedSites: true);
             Assert.IsTrue(sites.Any());
         }
 
-        private bool IsCertHashEqual(byte[] a, byte[] b)
-        {
-            return StructuralComparisons.StructuralEqualityComparer.Equals(a, b);
-        }
+        private bool IsCertHashEqual(byte[] a, byte[] b) => StructuralComparisons.StructuralEqualityComparer.Equals(a, b);
 
         [TestMethod, TestCategory("MegaTest")]
         public async Task TestBindingMatch()
         {
             // create test site with mix of hostname and IP only bindings
-            var testStr = Guid.NewGuid().ToString().Substring(0, 6);
+            var testStr = "abc123";
             PrimaryTestDomain = $"test-{testStr}." + PrimaryTestDomain;
 
-            string testBindingSiteName = "TestAllBinding_" + testStr;
+            var testBindingSiteName = "TestAllBinding_" + testStr;
 
             var testSiteDomain = "test" + testStr + "." + PrimaryTestDomain;
 
-            if (iisManager.SiteExists(testBindingSiteName))
+            if (await iisManager.SiteExists(testBindingSiteName))
             {
-                iisManager.DeleteSite(testBindingSiteName);
+                await iisManager.DeleteSite(testBindingSiteName);
             }
 
             // create site with IP all unassigned, no hostname
-            var site = iisManager.CreateSite(testBindingSiteName, "", PrimaryIISRoot, "DefaultAppPool", port: testSiteHttpPort);
+            var site = await iisManager.CreateSite(testBindingSiteName, "", PrimaryIISRoot, "DefaultAppPool", port: testSiteHttpPort);
 
             // add another hostname binding (matching cert and not matching cert)
-            List<string> testDomains = new List<string> { testSiteDomain, "label1." + testSiteDomain, "nested.label." + testSiteDomain };
-            iisManager.AddSiteBindings(site.Id.ToString(), testDomains, testSiteHttpPort);
+            var testDomains = new List<string> { testSiteDomain, "label1." + testSiteDomain, "nested.label." + testSiteDomain };
+            await iisManager.AddSiteBindings(site.Id.ToString(), testDomains, testSiteHttpPort);
 
             // get fresh instance of site since updates
-            site = iisManager.GetSiteById(site.Id.ToString());
+            site = await iisManager.GetIISSiteById(site.Id.ToString());
 
             var bindingsBeforeApply = site.Bindings.ToList();
 
             Assert.AreEqual(site.Name, testBindingSiteName);
 
             var dummyCertPath = Environment.CurrentDirectory + "\\Assets\\dummycert.pfx";
-            var managedSite = new ManagedSite
+            var managedCertificate = new ManagedCertificate
             {
                 Id = Guid.NewGuid().ToString(),
                 Name = testSiteName,
-                GroupId = site.Id.ToString(),
+                ServerSiteId = site.Id.ToString(),
                 RequestConfig = new CertRequestConfig
                 {
                     PrimaryDomain = testSiteDomain,
-                    ChallengeType = "http-01",
+                    Challenges = new ObservableCollection<CertRequestChallengeConfig>(
+                        new List<CertRequestChallengeConfig>
+                        {
+                            new CertRequestChallengeConfig{
+                                ChallengeType="http-01"
+                            }
+                        }),
                     PerformAutoConfig = true,
                     PerformAutomatedCertBinding = true,
                     PerformChallengeFileCopy = true,
                     PerformExtensionlessConfigChecks = true,
                     WebsiteRootPath = testSitePath,
-                    DeploymentSiteOption = DeploymentOption.AllSites,
+                    DeploymentSiteOption = DeploymentOption.SingleSite,
                     DeploymentBindingMatchHostname = true,
                     DeploymentBindingBlankHostname = true,
                     DeploymentBindingReplacePrevious = true,
                     SubjectAlternativeNames = new string[] { testSiteDomain, "label1." + testSiteDomain }
                 },
-                ItemType = ManagedItemType.SSL_LetsEncrypt_LocalIIS,
+                ItemType = ManagedCertificateType.SSL_LetsEncrypt_LocalIIS,
                 CertificatePath = dummyCertPath
             };
 
-            var actions = await iisManager.InstallCertForRequest(managedSite, dummyCertPath, false, false);
+            var actions = await new BindingDeploymentManager().StoreAndDeployManagedCertificate(
+                iisManager.GetDeploymentTarget(),
+                managedCertificate, dummyCertPath,
+                false,
+                false);
+
             foreach (var a in actions)
             {
                 System.Console.WriteLine(a.Description);
             }
             // get cert info to compare hash
-            var certInfo = CertificateManager.LoadCertificate(managedSite.CertificatePath);
+            var certInfo = CertificateManager.LoadCertificate(managedCertificate.CertificatePath);
 
             // check IIS site bindings
-            site = iisManager.GetSiteById(site.Id.ToString());
+            site = await iisManager.GetIISSiteById(site.Id.ToString());
             var finalBindings = site.Bindings.ToList();
 
             Assert.IsTrue(bindingsBeforeApply.Count < finalBindings.Count, "Should have new bindings");
@@ -314,8 +457,11 @@ namespace Certify.Core.Tests
             finally
             {
                 // clean up IIS either way
-                iisManager.DeleteSite(testBindingSiteName);
-                if (certInfo != null) CertificateManager.RemoveCertificate(certInfo);
+                await iisManager.DeleteSite(testBindingSiteName);
+                if (certInfo != null)
+                {
+                    CertificateManager.RemoveCertificate(certInfo);
+                }
             }
         }
     }
