@@ -1,5 +1,5 @@
-﻿using Certify.Models;
-using System.Collections.Generic;
+﻿using Certify.Management;
+using Certify.Models;
 using System.Threading.Tasks;
 using System.Web.Http;
 
@@ -8,7 +8,7 @@ namespace Certify.Service
     [RoutePrefix("api/system")]
     public class SystemController : Controllers.ControllerBase
     {
-        private Management.ICertifyManager _certifyManager = null;
+        private ICertifyManager _certifyManager = null;
 
         public SystemController(Management.ICertifyManager manager)
         {
@@ -20,7 +20,7 @@ namespace Certify.Service
         {
             DebugLog();
 
-            return new Management.Util().GetAppVersion().ToString();
+            return Management.Util.GetAppVersion().ToString();
         }
 
         [HttpGet, Route("updatecheck")]
@@ -29,6 +29,15 @@ namespace Certify.Service
             DebugLog();
 
             return await new Management.Util().CheckForUpdates();
+        }
+
+        [HttpGet, Route("maintenance")]
+        public async Task<string> PerformMaintenanceTasks()
+        {
+            DebugLog();
+
+            await _certifyManager.PerformCertificateCleanup();
+            return "OK";
         }
     }
 }

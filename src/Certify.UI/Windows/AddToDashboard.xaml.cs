@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Windows;
 using System.Windows.Input;
 
@@ -34,7 +34,7 @@ namespace Certify.UI.Windows
             ValidateKey.IsEnabled = false;
             Mouse.OverrideCursor = Cursors.Wait;
 
-            var dashboardClient = ViewModel.AppModel.Current.PluginManager?.DashboardClient;
+            var dashboardClient = ViewModel.AppViewModel.Current.PluginManager?.DashboardClient;
 
             if (dashboardClient != null)
             {
@@ -42,8 +42,8 @@ namespace Certify.UI.Windows
                 {
                     var instance = new Models.Shared.RegisteredInstance
                     {
-                        InstanceId = ViewModel.AppModel.Current.Preferences.InstanceId,
-                        AppVersion = new Management.Util().GetAppVersion().ToString(),
+                        InstanceId = ViewModel.AppViewModel.Current.Preferences.InstanceId,
+                        AppVersion = Management.Util.GetAppVersion().ToString(),
                         OS = Environment.OSVersion.ToString(),
                         MachineName = Environment.MachineName
                     };
@@ -53,7 +53,7 @@ namespace Certify.UI.Windows
 
                     if (resultOK)
                     {
-                        await ViewModel.AppModel.Current.SetInstanceRegistered();
+                        await ViewModel.AppViewModel.Current.SetInstanceRegistered();
                         MessageBox.Show("Server registration completed.");
                         this.Close();
                     }

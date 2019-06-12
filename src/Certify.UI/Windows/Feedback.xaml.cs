@@ -1,4 +1,4 @@
-using Certify.Locales;
+﻿using Certify.Locales;
 using System;
 using System.Windows;
 using System.Windows.Input;
@@ -13,7 +13,7 @@ namespace Certify.UI.Windows
         public string FeedbackMessage { get; set; }
         public bool IsException { get; set; }
 
-        protected Certify.UI.ViewModel.AppModel MainViewModel => ViewModel.AppModel.Current;
+        protected Certify.UI.ViewModel.AppViewModel MainViewModel => ViewModel.AppViewModel.Current;
 
         public Feedback(string feedbackMsg, bool isException)
         {
@@ -48,6 +48,8 @@ namespace Certify.UI.Windows
 
             //submit feedback if connection available
 
+            var appVersion = Management.Util.GetAppVersion();
+
             var feedbackReport = new Models.Shared.FeedbackReport
             {
                 EmailAddress = EmailAddress.Text,
@@ -55,10 +57,10 @@ namespace Certify.UI.Windows
                 SupportingData = new
                 {
                     OS = Environment.OSVersion.ToString(),
-                    AppVersion = ConfigResources.AppName + " " + new Certify.Management.Util().GetAppVersion(),
+                    AppVersion = ConfigResources.AppName + " " + appVersion,
                     IsException = this.IsException
                 },
-                AppVersion = ConfigResources.AppName + " " + new Certify.Management.Util().GetAppVersion(),
+                AppVersion = ConfigResources.AppName + " " + appVersion,
                 IsException = IsException
             };
 

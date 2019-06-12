@@ -1,4 +1,4 @@
-using Certify.Locales;
+﻿using Certify.Locales;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
@@ -12,7 +12,7 @@ namespace Certify.UI.Controls
     /// </summary>
     public partial class AboutControl : UserControl
     {
-        protected Certify.UI.ViewModel.AppModel MainViewModel => ViewModel.AppModel.Current;
+        protected Certify.UI.ViewModel.AppViewModel MainViewModel => ViewModel.AppViewModel.Current;
 
         public AboutControl()
         {
@@ -31,7 +31,7 @@ namespace Certify.UI.Controls
                 this.ServiceConnected.Foreground = System.Windows.Media.Brushes.Red;
                 this.ServiceConnected.Icon = FontAwesome.WPF.FontAwesomeIcon.ChainBroken;
             }
-            this.lblAppVersion.Text = ConfigResources.AppName + " " + new Certify.Management.Util().GetAppVersion();
+            this.lblAppVersion.Text = ConfigResources.AppName + " " + Management.Util.GetAppVersion();
 
             if (this.MainViewModel.IsRegisteredVersion)
             {
@@ -42,10 +42,17 @@ namespace Certify.UI.Controls
                 this.lblRegistrationDetails.Text = "";
             }
 
+            this.creditLibs.Text = "";
+
             // add details of current languages translator team
             if (!string.IsNullOrEmpty(SR.LanguageAuthor) && !this.creditLibs.Text.Contains(SR.About_LanguageTranslator))
             {
-                this.creditLibs.Text += Environment.NewLine + SR.About_LanguageTranslator + SR.LanguageAuthor;
+                this.creditLibs.Text = SR.About_LanguageTranslator + SR.LanguageAuthor + Environment.NewLine + Environment.NewLine;
+            }
+
+            if (System.IO.File.Exists("THIRD_PARTY_LICENSES.txt"))
+            {
+                this.creditLibs.Text += System.IO.File.ReadAllText("THIRD_PARTY_LICENSES.txt");
             }
         }
 
